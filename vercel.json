@@ -13,7 +13,7 @@
     }
   ],
   "env": {
-    "DEEPSEEK_API_KEY": "@deepseek_api_key",
-    "GITHUB_REPO_URL": "@github_repo_url"
+    "DEEPSEEK_API_KEY": "${DEEPSEEK_API_KEY}",
+    "GITHUB_REPO_URL": "${GITHUB_REPO_URL}"
   }
 }
