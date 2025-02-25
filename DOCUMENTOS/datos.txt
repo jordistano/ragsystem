@@ -1,0 +1,1 @@
+aquí se pueden poner datos para alimentar el RAG o instrucciones de como debe de
