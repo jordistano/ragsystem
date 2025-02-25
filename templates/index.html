@@ -1,0 +1,125 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema RAG con DeepSeek</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto p-4">
+        <h1 class="text-3xl font-bold text-center my-8">Sistema de Consulta RAG</h1>
+        
+        <div class="bg-white rounded-lg shadow p-6 mb-6">
+            <div class="mb-4">
+                <label for="query" class="block text-gray-700 font-medium mb-2">¿Qué deseas consultar?</label>
+                <textarea id="query" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" rows="3" placeholder="Escribe tu consulta aquí..."></textarea>
+            </div>
+            <button id="submitQuery" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">Consultar</button>
+            <button id="updateDocs" class="ml-2 bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50">Actualizar documentos</button>
+        </div>
+        
+        <div id="result" class="bg-white rounded-lg shadow p-6 mb-6 hidden">
+            <h2 class="text-xl font-semibold mb-4">Respuesta:</h2>
+            <div id="answer" class="mb-6 bg-gray-50 p-4 rounded-md"></div>
+            
+            <div>
+                <h3 class="text-lg font-medium mb-2">Fuentes:</h3>
+                <ul id="sources" class="list-disc pl-5 text-blue-600"></ul>
+            </div>
+        </div>
+        
+        <div id="loading" class="text-center py-8 hidden">
+            <div class="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+            <p class="mt-2 text-gray-600">Procesando tu consulta...</p>
+        </div>
+        
+        <div id="status" class="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded hidden">
+            <p id="statusMessage"></p>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const submitButton = document.getElementById('submitQuery');
+            const updateButton = document.getElementById('updateDocs');
+            const queryInput = document.getElementById('query');
+            const resultDiv = document.getElementById('result');
+            const answerDiv = document.getElementById('answer');
+            const sourcesList = document.getElementById('sources');
+            const loadingDiv = document.getElementById('loading');
+            const statusDiv = document.getElementById('status');
+            const statusMessage = document.getElementById('statusMessage');
+            
+            submitButton.addEventListener('click', async function() {
+                const query = queryInput.value.trim();
+                if (!query) return;
+                
+                resultDiv.classList.add('hidden');
+                loadingDiv.classList.remove('hidden');
+                statusDiv.classList.add('hidden');
+                
+                try {
+                    const response = await fetch('/query', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ query })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        answerDiv.innerHTML = data.answer.replace(/\n/g, '<br>');
+                        
+                        sourcesList.innerHTML = '';
+                        data.sources.forEach(source => {
+                            const li = document.createElement('li');
+                            li.textContent = source;
+                            sourcesList.appendChild(li);
+                        });
+                        
+                        resultDiv.classList.remove('hidden');
+                    } else {
+                        showStatus('error', data.error || 'Error al procesar la consulta');
+                    }
+                } catch (error) {
+                    showStatus('error', 'Error de conexión');
+                    console.error(error);
+                } finally {
+                    loadingDiv.classList.add('hidden');
+                }
+            });
+            
+            updateButton.addEventListener('click', async function() {
+                loadingDiv.classList.remove('hidden');
+                statusDiv.classList.add('hidden');
+                
+                try {
+                    const response = await fetch('/update_docs', {
+                        method: 'POST'
+                    });
+                    
+                    const data = await response.json();
+                    showStatus(data.status, data.message);
+                } catch (error) {
+                    showStatus('error', 'Error de conexión');
+                    console.error(error);
+                } finally {
+                    loadingDiv.classList.add('hidden');
+                }
+            });
+            
+            function showStatus(type, message) {
+                statusMessage.textContent = message;
+                statusDiv.className = type === 'success' 
+                    ? 'bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded'
+                    : 'bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded';
+                statusDiv.classList.remove('hidden');
+            }
+        });
+    </script>
+</body>
+</html>
