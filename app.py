@@ -13,7 +13,50 @@ import PyPDF2  # Para procesar PDFs
 import io
 import tempfile
 
-# Resto de configuraciones...
+import logging
+from functools import wraps
+import traceback
+
+
+from io import BytesIO
+def process_file_in_memory(file):
+    try:
+        filename = secure_filename(file.filename)
+        if filename.endswith('.pdf'):
+            # Procesar PDF en memoria
+            file_stream = BytesIO(file.read())
+            reader = PyPDF2.PdfReader(file_stream)
+            text = ""
+            for page in reader.pages:
+                text += page.extract_text() + "\n"
+            return text
+        elif filename.endswith('.txt'):
+            # Procesar TXT en memoria
+            return file.read().decode('utf-8', errors='replace')
+        return ""
+    except Exception as e:
+        logger.error(f"Error procesando archivo {filename}: {str(e)}")
+        return ""
+process_file = process_file_in_memory
+# Configura logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Decorator para manejar errores en endpoints
+def handle_endpoint_errors(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except Exception as e:
+            error_msg = str(e)
+            stack_trace = traceback.format_exc()
+            logger.error(f"Error: {error_msg}\nStack Trace: {stack_trace}")
+            return jsonify({
+                "error": error_msg,
+                "details": stack_trace if app.debug else "Verifica los logs para más detalles"
+            }), 500
+    return decorated_function
 
 # Directorio para upload temporal
 UPLOAD_FOLDER = tempfile.gettempdir()
@@ -49,6 +92,7 @@ def process_file(file):
 
 # Endpoint para subir archivos
 @app.route('/upload_files', methods=['POST'])
+@handle_endpoint_errors
 def upload_files():
     if 'files' not in request.files:
         return jsonify({"error": "No se enviaron archivos"}), 400
@@ -65,12 +109,15 @@ def upload_files():
     for file in files:
         if file and allowed_file(file.filename):
             try:
-                # Extraer texto según tipo de archivo
-                content = process_file(file)
+                # Extraer texto según tipo de archivo (en memoria)
+                content = process_file_in_memory(file)
                 
                 if not content:
                     error_files.append(f"{file.filename} (no se pudo extraer contenido)")
                     continue
+                
+                # Log del contenido para depuración
+                logger.info(f"Contenido extraído de {file.filename}: {content[:100]}...")
                 
                 # Dividir en chunks si el texto es muy largo
                 chunks = split_text(content, chunk_size=1000, overlap=200)
@@ -81,16 +128,20 @@ def upload_files():
                     chunk_embedding = embeddings.embed_query(chunk)
                     
                     # Guardar en Supabase
-                    supabase.table('documents').insert({
+                    result = supabase.table('documents').insert({
                         'content': chunk,
                         'metadata': {'filename': file.filename, 'chunk': i+1, 'total_chunks': len(chunks)},
                         'source': file.filename,
                         'embedding': chunk_embedding
                     }).execute()
+                    
+                    # Log para depuración
+                    logger.info(f"Resultado de inserción en Supabase: {result}")
                 
                 processed_count += 1
                 success_files.append(file.filename)
             except Exception as e:
+                logger.error(f"Error con archivo {file.filename}: {str(e)}\n{traceback.format_exc()}")
                 error_files.append(f"{file.filename} ({str(e)})")
         else:
             error_files.append(f"{file.filename} (tipo de archivo no permitido)")
@@ -189,6 +240,7 @@ def similarity_search(query_embedding, k=3):
     return []
 
 @app.route('/query', methods=['POST'])
+@handle_endpoint_errors
 def query():
     """Endpoint para consultar el sistema RAG"""
     try:
@@ -253,6 +305,7 @@ def query():
         return jsonify({"error": f"Error en el procesamiento: {str(e)}"}), 500
 
 @app.route('/update_docs', methods=['POST'])
+@handle_endpoint_errors
 def update_docs():
     """Endpoint para actualizar los documentos (versión para Supabase)"""
     try:
@@ -290,6 +343,62 @@ def update_docs():
 def index():
     """Página principal"""
     return render_template('index.html')
+
+@app.route('/test_supabase', methods=['GET'])
+@handle_endpoint_errors
+def test_supabase():
+    try:
+        # Intenta una operación simple
+        result = supabase.table('documents').select('id').limit(1).execute()
+        
+        return jsonify({
+            "status": "success",
+            "message": "Conexión a Supabase exitosa",
+            "result": result.data
+        })
+    except Exception as e:
+        raise Exception(f"Error conectando con Supabase: {str(e)}")
+
+# Agregar esta ruta para verificar la API de DeepSeek
+@app.route('/test_deepseek', methods=['GET'])
+@handle_endpoint_errors
+def test_deepseek():
+    try:
+        # Intenta generar un embedding simple
+        test_text = "Texto de prueba para verificar la API de DeepSeek"
+        embedding = embeddings.embed_query(test_text)
+        
+        return jsonify({
+            "status": "success",
+            "message": "Conexión a DeepSeek exitosa",
+            "embedding_length": len(embedding)
+        })
+    except Exception as e:
+        raise Exception(f"Error conectando con DeepSeek: {str(e)}")
+@app.route('/test_env', methods=['GET'])
+@handle_endpoint_errors
+def test_env():
+    env_status = {
+        'DEEPSEEK_API_KEY': bool(DEEPSEEK_API_KEY),
+        'DEEPSEEK_API_URL': bool(DEEPSEEK_API_URL),
+        'SUPABASE_URL': bool(SUPABASE_URL),
+        'SUPABASE_KEY': bool(SUPABASE_KEY),
+        'VECTOR_DIMENSION': VECTOR_DIMENSION,
+        'UPLOAD_FOLDER': os.path.exists(app.config['UPLOAD_FOLDER'])
+    }
+    
+    missing_vars = [k for k, v in env_status.items() if not v and k not in ['UPLOAD_FOLDER']]
+    
+    return jsonify({
+        "status": "success" if not missing_vars else "warning",
+        "message": "Todas las variables de entorno están configuradas" if not missing_vars else f"Faltan variables: {', '.join(missing_vars)}",
+        "config": env_status
+    })
+
+# Agregar esta ruta para acceder a la página de diagnóstico
+@app.route('/diagnostico')
+def diagnostico():
+    return render_template('diagnostico.html')
 
 if __name__ == '__main__':
     app.run(debug=True)

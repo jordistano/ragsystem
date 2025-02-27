@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diagnóstico del Sistema RAG</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold text-center text-blue-600 mb-8">Diagnóstico del Sistema RAG</h1>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Test de Supabase -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-semibold mb-4">Test de Conexión a Supabase</h2>
+                <button id="test-supabase-btn" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">
+                    Probar Conexión
+                </button>
+                <div id="supabase-result" class="mt-4 p-4 bg-gray-50 rounded-md hidden"></div>
+            </div>
+            
+            <!-- Test de DeepSeek -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-semibold mb-4">Test de API DeepSeek</h2>
+                <button id="test-deepseek-btn" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">
+                    Probar API
+                </button>
+                <div id="deepseek-result" class="mt-4 p-4 bg-gray-50 rounded-md hidden"></div>
+            </div>
+            
+            <!-- Test de Subida de Archivo -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-semibold mb-4">Test de Procesamiento de Archivo</h2>
+                <div class="mb-4">
+                    <input id="test-file" type="file" accept=".txt" class="block w-full text-sm text-gray-500
+                        file:mr-4 file:py-2 file:px-4
+                        file:rounded-md file:border-0
+                        file:text-sm file:font-semibold
+                        file:bg-blue-50 file:text-blue-700
+                        hover:file:bg-blue-100">
+                    <p class="text-xs text-gray-500 mt-1">Sube un archivo TXT pequeño para prueba</p>
+                </div>
+                <button id="test-file-btn" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700" disabled>
+                    Probar Procesamiento
+                </button>
+                <div id="file-result" class="mt-4 p-4 bg-gray-50 rounded-md hidden"></div>
+            </div>
+            
+            <!-- Variables de Entorno -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-semibold mb-4">Verificar Variables de Entorno</h2>
+                <button id="test-env-btn" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">
+                    Verificar Configuración
+                </button>
+                <div id="env-result" class="mt-4 p-4 bg-gray-50 rounded-md hidden"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Test Supabase
+            document.getElementById('test-supabase-btn').addEventListener('click', async function() {
+                const resultElem = document.getElementById('supabase-result');
+                resultElem.innerHTML = 'Probando conexión...';
+                resultElem.classList.remove('hidden', 'text-green-600', 'text-red-600');
+                
+                try {
+                    const response = await fetch('/test_supabase');
+                    const data = await response.json();
+                    
+                    resultElem.classList.add(response.ok ? 'text-green-600' : 'text-red-600');
+                    resultElem.innerHTML = `<p><strong>Status:</strong> ${response.ok ? 'Éxito' : 'Error'}</p>
+                                          <p><strong>Mensaje:</strong> ${data.message || 'Sin mensaje'}</p>
+                                          <pre class="mt-2 text-xs overflow-auto">${JSON.stringify(data, null, 2)}</pre>`;
+                } catch (error) {
+                    resultElem.classList.add('text-red-600');
+                    resultElem.innerHTML = `<p><strong>Error:</strong> ${error.message}</p>`;
+                }
+                
+                resultElem.classList.remove('hidden');
+            });
+            
+            // Test DeepSeek
+            document.getElementById('test-deepseek-btn').addEventListener('click', async function() {
+                const resultElem = document.getElementById('deepseek-result');
+                resultElem.innerHTML = 'Probando API...';
+                resultElem.classList.remove('hidden', 'text-green-600', 'text-red-600');
+                
+                try {
+                    const response = await fetch('/test_deepseek');
+                    const data = await response.json();
+                    
+                    resultElem.classList.add(response.ok ? 'text-green-600' : 'text-red-600');
+                    resultElem.innerHTML = `<p><strong>Status:</strong> ${response.ok ? 'Éxito' : 'Error'}</p>
+                                          <p><strong>Mensaje:</strong> ${data.message || 'Sin mensaje'}</p>
+                                          <pre class="mt-2 text-xs overflow-auto">${JSON.stringify(data, null, 2)}</pre>`;
+                } catch (error) {
+                    resultElem.classList.add('text-red-600');
+                    resultElem.innerHTML = `<p><strong>Error:</strong> ${error.message}</p>`;
+                }
+                
+                resultElem.classList.remove('hidden');
+            });
+            
+            // Test File Processing
+            const testFile = document.getElementById('test-file');
+            const testFileBtn = document.getElementById('test-file-btn');
+            
+            testFile.addEventListener('change', function() {
+                testFileBtn.disabled = !this.files.length;
+            });
+            
+            testFileBtn.addEventListener('click', async function() {
+                const resultElem = document.getElementById('file-result');
+                resultElem.innerHTML = 'Procesando archivo...';
+                resultElem.classList.remove('hidden', 'text-green-600', 'text-red-600');
+                
+                const file = testFile.files[0];
+                if (!file) {
+                    resultElem.classList.add('text-red-600');
+                    resultElem.innerHTML = 'No se seleccionó ningún archivo';
+                    return;
+                }
+                
+                const formData = new FormData();
+                formData.append('files', file);
+                
+                try {
+                    const response = await fetch('/upload_files', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    const data = await response.json();
+                    
+                    resultElem.classList.add(response.ok ? 'text-green-600' : 'text-red-600');
+                    resultElem.innerHTML = `<p><strong>Status:</strong> ${response.ok ? 'Éxito' : 'Error'}</p>
+                                          <p><strong>Mensaje:</strong> ${data.message || 'Sin mensaje'}</p>
+                                          <pre class="mt-2 text-xs overflow-auto">${JSON.stringify(data, null, 2)}</pre>`;
+                } catch (error) {
+                    resultElem.classList.add('text-red-600');
+                    resultElem.innerHTML = `<p><strong>Error:</strong> ${error.message}</p>`;
+                }
+                
+                resultElem.classList.remove('hidden');
+            });
+            
+            // Agregar endpoint para verificar variables de entorno
+            document.getElementById('test-env-btn').addEventListener('click', async function() {
+                const resultElem = document.getElementById('env-result');
+                resultElem.innerHTML = 'Verificando configuración...';
+                resultElem.classList.remove('hidden', 'text-green-600', 'text-red-600');
+                
+                try {
+                    const response = await fetch('/test_env');
+                    const data = await response.json();
+                    
+                    resultElem.classList.add(response.ok ? 'text-green-600' : 'text-red-600');
+                    resultElem.innerHTML = `<p><strong>Status:</strong> ${response.ok ? 'Éxito' : 'Error'}</p>
+                                          <p><strong>Mensaje:</strong> ${data.message || 'Sin mensaje'}</p>
+                                          <pre class="mt-2 text-xs overflow-auto">${JSON.stringify(data, null, 2)}</pre>`;
+                } catch (error) {
+                    resultElem.classList.add('text-red-600');
+                    resultElem.innerHTML = `<p><strong>Error:</strong> ${error.message}</p>`;
+                }
+                
+                resultElem.classList.remove('hidden');
+            });
+        });
+    </script>
+</body>
+</html>
