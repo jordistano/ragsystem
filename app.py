@@ -1,17 +1,135 @@
 # app.py
-from flask import Flask, request, jsonify, render_template
+# Nuevas importaciones necesarias
+from flask import Flask, request, jsonify, render_template, send_from_directory
+from werkzeug.utils import secure_filename
 import os
 import requests
 import numpy as np
 from dotenv import load_dotenv
 from supabase import create_client
 from langchain_core.embeddings import Embeddings
+import uuid
+import PyPDF2  # Para procesar PDFs
+import io
+import tempfile
+
+# Resto de configuraciones...
+
+# Directorio para upload temporal
+UPLOAD_FOLDER = tempfile.gettempdir()
+ALLOWED_EXTENSIONS = {'txt', 'pdf'}
+
+app = Flask(__name__)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Límite de 16MB por archivo
+
+# Verificar extensiones permitidas
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+# Función para extraer texto de PDF
+def extract_text_from_pdf(file):
+    try:
+        reader = PyPDF2.PdfReader(file)
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() + "\n"
+        return text
+    except Exception as e:
+        print(f"Error al extraer texto del PDF: {str(e)}")
+        return ""
+
+# Función para procesar archivos
+def process_file(file):
+    if file.filename.endswith('.pdf'):
+        return extract_text_from_pdf(file)
+    elif file.filename.endswith('.txt'):
+        return file.read().decode('utf-8')
+    return ""
+
+# Endpoint para subir archivos
+@app.route('/upload_files', methods=['POST'])
+def upload_files():
+    if 'files' not in request.files:
+        return jsonify({"error": "No se enviaron archivos"}), 400
+    
+    files = request.files.getlist('files')
+    
+    if not files or files[0].filename == '':
+        return jsonify({"error": "No se seleccionaron archivos"}), 400
+    
+    processed_count = 0
+    success_files = []
+    error_files = []
+    
+    for file in files:
+        if file and allowed_file(file.filename):
+            try:
+                # Extraer texto según tipo de archivo
+                content = process_file(file)
+                
+                if not content:
+                    error_files.append(f"{file.filename} (no se pudo extraer contenido)")
+                    continue
+                
+                # Dividir en chunks si el texto es muy largo
+                chunks = split_text(content, chunk_size=1000, overlap=200)
+                
+                # Procesar cada chunk
+                for i, chunk in enumerate(chunks):
+                    # Generar embedding
+                    chunk_embedding = embeddings.embed_query(chunk)
+                    
+                    # Guardar en Supabase
+                    supabase.table('documents').insert({
+                        'content': chunk,
+                        'metadata': {'filename': file.filename, 'chunk': i+1, 'total_chunks': len(chunks)},
+                        'source': file.filename,
+                        'embedding': chunk_embedding
+                    }).execute()
+                
+                processed_count += 1
+                success_files.append(file.filename)
+            except Exception as e:
+                error_files.append(f"{file.filename} ({str(e)})")
+        else:
+            error_files.append(f"{file.filename} (tipo de archivo no permitido)")
+    
+    # Preparar mensaje de respuesta
+    message = f"Se procesaron {processed_count} de {len(files)} archivos correctamente."
+    if error_files:
+        message += f" Errores: {', '.join(error_files)}"
+    
+    return jsonify({
+        "status": "success" if processed_count > 0 else "error",
+        "message": message,
+        "success_files": success_files,
+        "error_files": error_files
+    })
+
+# Función para dividir texto en chunks
+def split_text(text, chunk_size=1000, overlap=200):
+    words = text.split()
+    chunks = []
+    
+    if not words:
+        return chunks
+    
+    i = 0
+    while i < len(words):
+        chunk_words = words[i:i + chunk_size]
+        chunks.append(" ".join(chunk_words))
+        i += chunk_size - overlap
+    
+    return chunks
+
+# Resto del código...
 
 # Cargar variables de entorno
 load_dotenv()
 
 # Configuración inicial
-app = Flask(__name__)
+
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 DEEPSEEK_EMBED_URL = "https://api.deepseek.com/v1/embeddings"
