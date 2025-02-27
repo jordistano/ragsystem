@@ -13,7 +13,6 @@
     }
   ],
   "env": {
-    "DEEPSEEK_API_KEY": "${DEEPSEEK_API_KEY}",
-    "GITHUB_REPO_URL": "${GITHUB_REPO_URL}"
+    "PYTHONUNBUFFERED": "1"
   }
 }
